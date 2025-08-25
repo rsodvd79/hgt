@@ -88,6 +88,35 @@ python hgt_to_stl.py --mosaic --input-dir HGT \
 	--output exports/mosaic_closed_ds50.stl
 ```
 
+Ritaglio circolare (solo con `--mosaic`), centrato sul modello:
+- Unità del raggio: se `--geo-scale` è attivo, il raggio è nelle stesse unità di XY (`--units mm|m`); senza `--geo-scale`, è in pixel.
+```
+# 50 km con unità in metri
+python hgt_to_stl.py --mosaic --input-dir HGT --recursive \
+	--downsample 13 --geo-scale --units m --z-exaggeration 1.0 \
+	--circle-radius 50000 \
+	--close --base-offset 10 \
+	--output exports/mosaic_circle_50km_m.stl
+
+# 50 km con unità in millimetri
+python hgt_to_stl.py --mosaic --input-dir HGT --recursive \
+	--downsample 13 --geo-scale --units mm --z-exaggeration 1.0 \
+	--circle-radius 50000000 \
+	--close --base-offset 10 \
+	--output exports/mosaic_circle_50km_mm.stl
+
+# Raggio in pixel (senza scala geografica)
+python hgt_to_stl.py --mosaic --input-dir HGT \
+	--downsample 13 --z-exaggeration 1.0 \
+	--circle-radius 300 \
+	--close --base-offset 10 \
+	--output exports/mosaic_circle_px300.stl
+```
+Note:
+- Il ritaglio imposta a NaN l’area fuori cerchio; la triangolazione salta i NaN.
+- Con `--close`, la base piana viene generata solo sotto le celle valide. Il bordo del cerchio non ha (ancora) una parete cilindrica dedicata.
+- Se il raggio è troppo piccolo rispetto al passo della griglia (dipende da `--downsample`), potresti ottenere “nessun punto valido”: aumenta il raggio o riduci il downsample.
+
 Half‑merge (mezzo + mezzo, 0.5° + 0.5°):
 - Metà destra del tile sinistro + metà sinistra del tile destro (stessa latitudine, longitudes adiacenti):
 ```
@@ -119,6 +148,7 @@ Limiti di sicurezza e performance:
 - Con `--geo-scale`, XY sono in metri (o mm) secondo `--units`; senza, sono in pixel.
 - Per immagini molto grandi, combina `--downsample`, `--dpi` e `--figsize` per bilanciare qualità e tempo/memoria.
  - Le mesh STL esportate applicano automaticamente l’orientamento delle normali verso l’esterno; l’asse Y è orientato a nord (X est, Y nord, Z su).
+ - In caso di selezione vuota dopo i ritagli (tutti NaN), lo script esce con un messaggio esplicito: regola raggio/ritagli o il downsample.
 
 ## Riferimenti
 
