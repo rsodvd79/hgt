@@ -88,6 +88,26 @@ python hgt_to_stl.py --mosaic --input-dir HGT \
 	--output exports/mosaic_closed_ds50.stl
 ```
 
+Half‑merge (mezzo + mezzo, 0.5° + 0.5°):
+- Metà destra del tile sinistro + metà sinistra del tile destro (stessa latitudine, longitudes adiacenti):
+```
+python hgt_to_stl.py --half-merge HGT/N45E007.hgt HGT/N45E008.hgt \
+	--downsample 8 --geo-scale --units mm --z-exaggeration 5.0 \
+	--close --base-offset 10 \
+	--output exports/half_N45E007_N45E008_ds8.stl
+```
+- Solo la metà inferiore (sud) dei due tile, poi unione metà destra/sinistra:
+```
+python hgt_to_stl.py --half-merge HGT/N45E007.hgt HGT/N45E008.hgt \
+	--bottom-half \
+	--downsample 8 --geo-scale --units mm --z-exaggeration 5.0 \
+	--close --base-offset 10 \
+	--output exports/half_bottom_N45E007_N45E008_ds8.stl
+```
+Suggerimenti:
+- Riduci `--downsample` (es. 6, 4, 2, 1) per più dettaglio, tenendo conto delle soglie di sicurezza sui triangoli.
+- Usa `--allow-large` solo se sei consapevole di tempi/memoria elevati.
+
 Limiti di sicurezza e performance:
 - Lo script blocca l’export se il numero stimato di triangoli supera: ~500k (singolo) / ~1M (mosaico).
 - Usa `--downsample` per ridurre la complessità oppure `--allow-large` consapevolmente.
@@ -98,6 +118,7 @@ Limiti di sicurezza e performance:
 - L’estensione geografica (assi in gradi) viene derivata dal nome del file standard (es. `N46E009.hgt` copre 46–47°N e 9–10°E).
 - Con `--geo-scale`, XY sono in metri (o mm) secondo `--units`; senza, sono in pixel.
 - Per immagini molto grandi, combina `--downsample`, `--dpi` e `--figsize` per bilanciare qualità e tempo/memoria.
+ - Le mesh STL esportate applicano automaticamente l’orientamento delle normali verso l’esterno; l’asse Y è orientato a nord (X est, Y nord, Z su).
 
 ## Riferimenti
 

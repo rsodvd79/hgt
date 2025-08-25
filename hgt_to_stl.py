@@ -198,6 +198,8 @@ def main():
     p.add_argument("--recursive", action="store_true", help="Cerca ricorsivamente")
     p.add_argument("--output-dir", type=str, help="Cartella in cui salvare gli STL")
     p.add_argument("--mosaic", action="store_true", help="Crea un unico STL mosaico con tutti i .hgt trovati")
+    p.add_argument("--half-merge", nargs=2, metavar=("LEFT_HGT", "RIGHT_HGT"), help="Unisci metà destra del primo e metà sinistra del secondo in un unico STL")
+    p.add_argument("--bottom-half", action="store_true", help="Con --half-merge, usa solo la metà inferiore (sud) dei due tile")
 
     args = p.parse_args()
 
@@ -446,8 +448,73 @@ def main():
         export_stl(V_flat, faces, out_path)
         return out_path
 
+    def process_half_merge(left_hgt: str, right_hgt: str) -> str:
+        """Combina la metà destra del tile sinistro con la metà sinistra del tile destro (stessa latitudine)."""
+        A = load_hgt(left_hgt)
+        B = load_hgt(right_hgt)
+        # Downsample
+        A = downsample(A, args.downsample)
+        B = downsample(B, args.downsample)
+        # Uniforma dimensioni
+        r = min(A.shape[0], B.shape[0])
+        c = min(A.shape[1], B.shape[1])
+        A = A[:r, :c]
+        B = B[:r, :c]
+        # Eventuale metà inferiore
+        if args.bottom_half:
+            midr = r // 2
+            A = A[midr:, :]
+            B = B[midr:, :]
+            r = A.shape[0]
+        mid = c // 2
+        left_half = A[:, mid:]
+        right_half = B[:, :mid]
+        mosaic = np.concatenate([left_half, right_half], axis=1)
+
+        rows, cols = mosaic.shape
+        approx_faces = 2 * max(0, rows - 1) * max(0, cols - 1)
+        # Usa limite del mosaico
+        if approx_faces > 1_000_000 and not args.allow_large:
+            raise SystemExit(
+                f"Mosaico metà+metà troppo grande (~{approx_faces:,} triangoli). Aumenta --downsample o usa --allow-large."
+            )
+
+        # Extent: lon 0.5° + 0.5° centrato tra i due tile, lat dal nome
+        tl = parse_tile_name(left_hgt)
+        tr = parse_tile_name(right_hgt)
+        extent = None
+        if tl and tr:
+            lat_l, lon_l = tl
+            lat_r, lon_r = tr
+            if int(lat_l) == int(lat_r) and int(lon_r) == int(lon_l) + 1:
+                lon_min = lon_l + 0.5
+                lon_max = lon_r + 0.5
+                lat_min = lat_l
+                lat_max = lat_l + (0.5 if args.bottom_half else 1.0)
+                extent = (lon_min, lon_max, lat_min, lat_max)
+
+        V, r, c = build_vertices_extent(mosaic, extent if args.geo_scale else None, args.geo_scale, args.units, args.z_exaggeration)
+        valid = ~np.isnan(V[..., 2])
+        faces = grid_triangles(r, c, valid)
+        V_flat = V.reshape(-1, 3)
+        if args.close:
+            V_flat, faces = build_closed_mesh(V_flat, faces, r, c, args.base_offset)
+
+        out_dir = args.output_dir or (os.path.dirname(left_hgt) or ".")
+        os.makedirs(out_dir, exist_ok=True)
+        base_name = f"half_{os.path.splitext(os.path.basename(left_hgt))[0]}_{os.path.splitext(os.path.basename(right_hgt))[0]}"
+        out_path = args.output or os.path.join(out_dir, f"{base_name}.stl")
+        faces = ensure_outward_normals(V_flat, faces)
+        export_stl(V_flat, faces, out_path)
+        return out_path
+
 
     # Batch / Mosaico
+    if args.half_merge:
+        out = process_half_merge(args.half_merge[0], args.half_merge[1])
+        print(f"Salvato half-merge STL: {out}")
+        return
+
     if args.all or args.input_dir or args.mosaic:
         base = args.input_dir or "."
         files = list_hgt_files(base, args.recursive)
