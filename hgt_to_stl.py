@@ -225,7 +225,9 @@ def main():
             deg_per_px_lat = (lat_max - lat_min) / max(1, (rows - 1))
             # Costruisci griglie in gradi
             x_deg = lon_min + np.arange(cols, dtype=np.float64) * deg_per_px_lon
-            y_deg = lat_min + np.arange(rows, dtype=np.float64) * deg_per_px_lat
+            # Y: riga 0 = lat_max, cresce verso nord (right-handed)
+            y_idx = np.arange(rows, dtype=np.float64)
+            y_deg = lat_min + (rows - 1 - y_idx) * deg_per_px_lat
             Xd, Yd = np.meshgrid(x_deg, y_deg)
             if use_geo:
                 # Approssimazione: usa fattori alla latitudine media
@@ -235,8 +237,8 @@ def main():
                 Y = (Yd - lat_min) * m_per_deg_lat
             else:
                 X = np.arange(cols, dtype=np.float64)
-                Y = np.arange(rows, dtype=np.float64)
-                X, Y = np.meshgrid(X, Y)
+                y_pix = (rows - 1 - np.arange(rows, dtype=np.float64))
+                X, Y = np.meshgrid(X, y_pix)
         else:
             # fallback a pixel
             X = np.arange(cols, dtype=np.float64)
