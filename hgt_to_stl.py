@@ -198,6 +198,7 @@ def main():
     p.add_argument("--recursive", action="store_true", help="Cerca ricorsivamente")
     p.add_argument("--output-dir", type=str, help="Cartella in cui salvare gli STL")
     p.add_argument("--mosaic", action="store_true", help="Crea un unico STL mosaico con tutti i .hgt trovati")
+    p.add_argument("--circle-radius", type=float, help="Mosaico: raggio del ritaglio circolare centrato sul modello. Unità: mm/m se --geo-scale, altrimenti pixel")
     p.add_argument("--half-merge", nargs=2, metavar=("LEFT_HGT", "RIGHT_HGT"), help="Unisci metà destra del primo e metà sinistra del secondo in un unico STL")
     p.add_argument("--bottom-half", action="store_true", help="Con --half-merge, usa solo la metà inferiore (sud) dei due tile")
 
@@ -264,21 +265,24 @@ def main():
         V = np.dstack((X, Y, Z)).astype(np.float64)
         return V, rows, cols
 
-    def build_closed_mesh(vertices_xyz: np.ndarray, faces: np.ndarray, rows: int, cols: int, base_offset: float) -> Tuple[np.ndarray, np.ndarray]:
+    def build_closed_mesh(vertices_xyz: np.ndarray, faces: np.ndarray, rows: int, cols: int, base_offset: float, valid_mask_top: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
         """Aggiunge base piana e pareti perimetrali.
         Base a z = min(Z) - base_offset.
         """
         Vgrid = vertices_xyz.reshape(rows, cols, 3)
         Z = Vgrid[..., 2]
-        # Base
-        base_z = np.nanmin(Z) - float(base_offset)
+        # Base: usa solo valori finiti
+        z_valid = Z[np.isfinite(Z)]
+        if z_valid.size == 0:
+            raise SystemExit("Nessun punto valido nell'area selezionata (tutti NaN). Riduci il ritaglio o aumenta il raggio.")
+        base_z = float(np.min(z_valid)) - float(base_offset)
         Vbottom = Vgrid.copy()
         Vbottom[..., 2] = base_z
         N = rows * cols
         V_all = np.vstack([vertices_xyz, Vbottom.reshape(-1, 3)])
 
-        # Bottom faces (tutti i pixel, anche se top ha NaN)
-        valid_bottom = np.ones((rows, cols), dtype=bool)
+        # Bottom faces: usa la stessa maschera di validità (celle con 4 vertici validi)
+        valid_bottom = valid_mask_top if valid_mask_top is not None else np.ones((rows, cols), dtype=bool)
         f_bottom = grid_triangles(rows, cols, valid_bottom)
         # Flip winding per normali verso il basso
         f_bottom = f_bottom[:, [0, 2, 1]] + N
@@ -355,7 +359,7 @@ def main():
         faces = grid_triangles(r, c, valid)
         if args.close:
             V_flat = V.reshape(-1, 3)
-            V_flat, faces = build_closed_mesh(V_flat, faces, r, c, args.base_offset)
+            V_flat, faces = build_closed_mesh(V_flat, faces, r, c, args.base_offset, valid)
         else:
             V_flat = V.reshape(-1, 3)
 
@@ -433,11 +437,21 @@ def main():
 
         extent = (lon_min, lon_max + 1, lat_min, lat_max + 1)
         V, r, c = build_vertices_extent(mosaic, extent if args.geo_scale else None, args.geo_scale, args.units, args.z_exaggeration)
+        # Maschera circolare opzionale
+        if args.circle_radius and args.circle_radius > 0:
+            X = V[..., 0]
+            Y = V[..., 1]
+            cx = 0.5 * (np.nanmin(X) + np.nanmax(X))
+            cy = 0.5 * (np.nanmin(Y) + np.nanmax(Y))
+            rr2 = float(args.circle_radius) ** 2
+            inside = (X - cx) ** 2 + (Y - cy) ** 2 <= rr2
+            # Invalida Z fuori dal cerchio
+            V[~inside, 2] = np.nan
         valid = ~np.isnan(V[..., 2])
         faces = grid_triangles(r, c, valid)
         if args.close:
             V_flat = V.reshape(-1, 3)
-            V_flat, faces = build_closed_mesh(V_flat, faces, r, c, args.base_offset)
+            V_flat, faces = build_closed_mesh(V_flat, faces, r, c, args.base_offset, valid)
         else:
             V_flat = V.reshape(-1, 3)
 
