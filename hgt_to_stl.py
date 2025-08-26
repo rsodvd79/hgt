@@ -199,6 +199,7 @@ def main():
     p.add_argument("--output-dir", type=str, help="Cartella in cui salvare gli STL")
     p.add_argument("--mosaic", action="store_true", help="Crea un unico STL mosaico con tutti i .hgt trovati")
     p.add_argument("--circle-radius", type=float, help="Mosaico: raggio del ritaglio circolare centrato sul modello. Unità: mm/m se --geo-scale, altrimenti pixel")
+    p.add_argument("--circular-wall", action="store_true", help="Mosaico: aggiungi parete cilindrica verticale lungo il bordo del cerchio (richiede --circle-radius e --close)")
     p.add_argument("--half-merge", nargs=2, metavar=("LEFT_HGT", "RIGHT_HGT"), help="Unisci metà destra del primo e metà sinistra del secondo in un unico STL")
     p.add_argument("--bottom-half", action="store_true", help="Con --half-merge, usa solo la metà inferiore (sud) dei due tile")
 
@@ -265,7 +266,15 @@ def main():
         V = np.dstack((X, Y, Z)).astype(np.float64)
         return V, rows, cols
 
-    def build_closed_mesh(vertices_xyz: np.ndarray, faces: np.ndarray, rows: int, cols: int, base_offset: float, valid_mask_top: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
+    def build_closed_mesh(
+        vertices_xyz: np.ndarray,
+        faces: np.ndarray,
+        rows: int,
+        cols: int,
+        base_offset: float,
+        valid_mask_top: Optional[np.ndarray] = None,
+        add_inner_walls: bool = False,
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Aggiunge base piana e pareti perimetrali.
         Base a z = min(Z) - base_offset.
         """
@@ -287,7 +296,7 @@ def main():
         # Flip winding per normali verso il basso
         f_bottom = f_bottom[:, [0, 2, 1]] + N
 
-        # Pareti perimetrali solo dove i vertici top non sono NaN
+    # Pareti perimetrali solo dove i vertici top non sono NaN
         idx = np.arange(rows * cols, dtype=np.int64).reshape(rows, cols)
         wall_faces = []
         def add_quad(t0, t1):
@@ -326,7 +335,41 @@ def main():
 
         f_walls = np.array(wall_faces, dtype=np.int64) if wall_faces else np.zeros((0, 3), dtype=np.int64)
 
-        f_all = np.vstack([faces, f_bottom, f_walls]) if faces.size else np.vstack([f_bottom, f_walls])
+        # Pareti interne lungo il bordo del ritaglio (es. cerchio)
+        f_inner = np.zeros((0, 3), dtype=np.int64)
+        if add_inner_walls and valid_mask_top is not None:
+            v = valid_mask_top
+            # Celle valide (come per triangolazione top)
+            cell_valid = v[:-1, :-1] & v[1:, :-1] & v[:-1, 1:] & v[1:, 1:]
+            inner_faces = []
+            # Orizzontali: bordo tra celle sopra/sotto
+            for i in range(rows):
+                for j in range(cols - 1):
+                    if v[i, j] and v[i, j + 1]:
+                        up = cell_valid[i - 1, j] if i > 0 else False
+                        down = cell_valid[i, j] if i < rows - 1 else False
+                        if up != down:
+                            t0 = idx[i, j]
+                            t1 = idx[i, j + 1]
+                            b0, b1 = t0 + N, t1 + N
+                            inner_faces.append([t0, t1, b0])
+                            inner_faces.append([b0, t1, b1])
+            # Verticali: bordo tra celle sinistra/destra
+            for i in range(rows - 1):
+                for j in range(cols):
+                    if v[i, j] and v[i + 1, j]:
+                        left = cell_valid[i, j - 1] if j > 0 else False
+                        right = cell_valid[i, j] if j < cols - 1 else False
+                        if left != right:
+                            t0 = idx[i, j]
+                            t1 = idx[i + 1, j]
+                            b0, b1 = t0 + N, t1 + N
+                            inner_faces.append([t0, t1, b0])
+                            inner_faces.append([b0, t1, b1])
+            if inner_faces:
+                f_inner = np.array(inner_faces, dtype=np.int64)
+
+        f_all = np.vstack([faces, f_bottom, f_walls, f_inner]) if faces.size else np.vstack([f_bottom, f_walls, f_inner])
         return V_all, f_all
 
     def process_one(hgt_path: str) -> str:
@@ -451,7 +494,7 @@ def main():
         faces = grid_triangles(r, c, valid)
         if args.close:
             V_flat = V.reshape(-1, 3)
-            V_flat, faces = build_closed_mesh(V_flat, faces, r, c, args.base_offset, valid)
+            V_flat, faces = build_closed_mesh(V_flat, faces, r, c, args.base_offset, valid, add_inner_walls=bool(args.circle_radius and args.circular_wall))
         else:
             V_flat = V.reshape(-1, 3)
 

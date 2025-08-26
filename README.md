@@ -112,10 +112,19 @@ python hgt_to_stl.py --mosaic --input-dir HGT \
 	--close --base-offset 10 \
 	--output exports/mosaic_circle_px300.stl
 ```
-Note:
-- Il ritaglio imposta a NaN l’area fuori cerchio; la triangolazione salta i NaN.
-- Con `--close`, la base piana viene generata solo sotto le celle valide. Il bordo del cerchio non ha (ancora) una parete cilindrica dedicata.
-- Se il raggio è troppo piccolo rispetto al passo della griglia (dipende da `--downsample`), potresti ottenere “nessun punto valido”: aumenta il raggio o riduci il downsample.
+	Parete cilindrica lungo il bordo del cerchio (chiusura laterale):
+	```
+	python hgt_to_stl.py --mosaic --input-dir HGT --recursive \
+		--downsample 10 --geo-scale --units m --z-exaggeration 2.5 \
+		--circle-radius 30000 --circular-wall \
+		--close --base-offset 10 \
+		--output exports/mosaic_circle_30km_m_wall.stl --allow-large
+	```
+	Note:
+	- Il ritaglio imposta a NaN l’area fuori cerchio; la triangolazione salta i NaN.
+	- Con `--close`, la base piana viene generata sotto l’area valida; con `--circular-wall` viene aggiunta anche la parete verticale lungo il bordo del cerchio (solo in modalità `--mosaic`).
+	- Le pareti circolari seguono la discretizzazione della griglia (non un cerchio perfetto). Riduci `--downsample` per un bordo più regolare.
+	- Se il raggio è troppo piccolo rispetto al passo della griglia (dipende da `--downsample`), potresti ottenere “nessun punto valido”: aumenta il raggio o riduci il downsample.
 
 Half‑merge (mezzo + mezzo, 0.5° + 0.5°):
 - Metà destra del tile sinistro + metà sinistra del tile destro (stessa latitudine, longitudes adiacenti):
@@ -140,6 +149,7 @@ Suggerimenti:
 Limiti di sicurezza e performance:
 - Lo script blocca l’export se il numero stimato di triangoli supera: ~500k (singolo) / ~1M (mosaico).
 - Usa `--downsample` per ridurre la complessità oppure `--allow-large` consapevolmente.
+- Opzioni come `--close`, `--circular-wall` e ritagli piccoli possono aumentare le facce: valuta `--downsample` di conseguenza.
 
 ## Note
 
