@@ -18,6 +18,16 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+## Interfaccia grafica (GUI)
+
+Per avviare una semplice GUI che raccoglie i parametri e lancia `hgt_to_stl.py`:
+
+```
+python hgt_gui.py
+```
+
+La GUI supporta modalità Singolo, Batch, Mosaico e Half‑merge, inclusi i ritagli circolari e le opzioni di chiusura/base. Mostra il log in tempo reale ed espone i parametri principali.
+
 ## Visualizzazione PNG — `hgt_viewer.py`
 
 Esempi di base:
@@ -72,7 +82,15 @@ Opzioni principali:
 - `--z-exaggeration <F>`: fattore di esagerazione verticale.
 - `--crop top,left,height,width`: ritaglio in pixel.
 - `--close`: chiude il modello con base piana e pareti verticali.
-- `--base-offset 10`: pone la base a min(Z) - 10 (stesse unità di Z: es. mm se `--units mm`).
+- `--base-offset 10`: pone la base a min(Z) - 10. Nota:
+	- Ha effetto solo con `--close`.
+	- Le unità sono le stesse di Z, quindi dipendono da `--units` e da `--z-exaggeration` applicata a Z.
+		- Esempio: con `--units m` l'offset è in metri; con `--units mm` è in millimetri.
+		- Se usi `--z-exaggeration 2`, l'offset confronta Z già esagerata.
+	- In esecuzione viene mostrato un log informativo: `Base: z_min=..., z_max=..., offset=..., base_z=...`.
+- `--base-z <val>`: quota assoluta della base; se specificata, sostituisce il calcolo basato su `--base-offset`.
+	- Anche qui, le unità sono quelle di Z dopo `--units` e `--z-exaggeration`.
+	- Esempio: imposta la base a quota 0 m (con units m): `--base-z 0`.
 - `--allow-large`: permette l’export oltre le soglie di sicurezza (mesh molto pesanti).
 
 Batch su cartelle (uno STL per file):

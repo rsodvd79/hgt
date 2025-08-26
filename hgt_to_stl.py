@@ -191,6 +191,7 @@ def main():
     p.add_argument("--units", choices=["mm", "m", "unit"], default="mm", help="Unità STL (default: mm)")
     p.add_argument("--close", action="store_true", help="Chiudi con pareti verticali e base piana")
     p.add_argument("--base-offset", type=float, default=10.0, help="Distanza sotto la quota minima per la base (stesse unità di Z). Default: 10")
+    p.add_argument("--base-z", type=float, help="Quota assoluta della base; se specificata, ignora --base-offset. (Stesse unità di Z dopo units/z-exaggeration)")
     p.add_argument("--allow-large", action="store_true", help="Permetti export > 500k triangoli")
     # Batch
     p.add_argument("--all", action="store_true", help="Elabora tutti i .hgt nella cartella")
@@ -271,7 +272,8 @@ def main():
         faces: np.ndarray,
         rows: int,
         cols: int,
-        base_offset: float,
+    base_offset: float,
+    base_z_override: Optional[float] = None,
         valid_mask_top: Optional[np.ndarray] = None,
         add_inner_walls: bool = False,
     ) -> Tuple[np.ndarray, np.ndarray]:
@@ -284,7 +286,17 @@ def main():
         z_valid = Z[np.isfinite(Z)]
         if z_valid.size == 0:
             raise SystemExit("Nessun punto valido nell'area selezionata (tutti NaN). Riduci il ritaglio o aumenta il raggio.")
-        base_z = float(np.min(z_valid)) - float(base_offset)
+        if base_z_override is not None:
+            base_z = float(base_z_override)
+        else:
+            base_z = float(np.min(z_valid)) - float(base_offset)
+        try:
+            zmin = float(np.min(z_valid))
+            zmax = float(np.max(z_valid))
+            extra = " (override)" if base_z_override is not None else ""
+            print(f"[Info] Base: z_min={zmin:.3f}, z_max={zmax:.3f}, offset={base_offset}, base_z={base_z:.3f}{extra} (stesse unità di Z)")
+        except Exception:
+            pass
         Vbottom = Vgrid.copy()
         Vbottom[..., 2] = base_z
         N = rows * cols
@@ -402,7 +414,7 @@ def main():
         faces = grid_triangles(r, c, valid)
         if args.close:
             V_flat = V.reshape(-1, 3)
-            V_flat, faces = build_closed_mesh(V_flat, faces, r, c, args.base_offset, valid)
+            V_flat, faces = build_closed_mesh(V_flat, faces, r, c, args.base_offset, args.base_z, valid)
         else:
             V_flat = V.reshape(-1, 3)
 
@@ -494,7 +506,7 @@ def main():
         faces = grid_triangles(r, c, valid)
         if args.close:
             V_flat = V.reshape(-1, 3)
-            V_flat, faces = build_closed_mesh(V_flat, faces, r, c, args.base_offset, valid, add_inner_walls=bool(args.circle_radius and args.circular_wall))
+            V_flat, faces = build_closed_mesh(V_flat, faces, r, c, args.base_offset, args.base_z, valid, add_inner_walls=bool(args.circle_radius and args.circular_wall))
         else:
             V_flat = V.reshape(-1, 3)
 
@@ -555,7 +567,7 @@ def main():
         faces = grid_triangles(r, c, valid)
         V_flat = V.reshape(-1, 3)
         if args.close:
-            V_flat, faces = build_closed_mesh(V_flat, faces, r, c, args.base_offset)
+            V_flat, faces = build_closed_mesh(V_flat, faces, r, c, args.base_offset, args.base_z)
 
         out_dir = args.output_dir or (os.path.dirname(left_hgt) or ".")
         os.makedirs(out_dir, exist_ok=True)
